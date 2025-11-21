@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Search, Sparkles, Send, Trash2 } from 'lucide-react';
 import Header from './components/Header';

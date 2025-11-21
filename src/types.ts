@@ -1,3 +1,4 @@
+
 export interface NlpEntities {
   bond_code?: string;
   function_api?: string;
