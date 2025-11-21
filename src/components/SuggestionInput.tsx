@@ -9,6 +9,7 @@ interface SuggestionInputProps {
   onSearch: () => void;
   disabled?: boolean;
   placeholder?: string;
+  onHistoryNavigate?: (direction: 'up' | 'down') => void;
 }
 
 const SuggestionInput: React.FC<SuggestionInputProps> = ({ 
@@ -16,7 +17,8 @@ const SuggestionInput: React.FC<SuggestionInputProps> = ({
   onChange, 
   onSearch,
   disabled,
-  placeholder 
+  placeholder,
+  onHistoryNavigate
 }) => {
   const [suggestions, setSuggestions] = useState<SuggestionItem[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -51,7 +53,6 @@ const SuggestionInput: React.FC<SuggestionInputProps> = ({
     setCursorPosition(pos);
 
     // Logic to find current word being typed
-    // We look back from cursor position to the last separator
     const textBeforeCursor = val.slice(0, pos);
     const matches = textBeforeCursor.match(/([a-zA-Z0-9_\u4e00-\u9fa5]+)$/);
     
@@ -62,12 +63,12 @@ const SuggestionInput: React.FC<SuggestionInputProps> = ({
       // Filter suggestions
       const matchedBonds = allBondCodes
         .filter(code => code.toLowerCase().includes(searchLower))
-        .slice(0, 5)
+        .slice(0, 4)
         .map(code => ({ type: 'bond', label: code, value: code, subLabel: '债券代码' } as SuggestionItem));
         
       const matchedNames = allBondNames
         .filter(name => name.toLowerCase().includes(searchLower))
-        .slice(0, 5)
+        .slice(0, 4)
         .map(name => {
           const code = (bondData.bond_name_to_code as any)[name];
           return { type: 'bond', label: name, value: name, subLabel: code ? `债券: ${code}` : '债券名称' } as SuggestionItem;
@@ -75,7 +76,7 @@ const SuggestionInput: React.FC<SuggestionInputProps> = ({
 
       const matchedFuncs = allFuncNames
         .filter(func => func.toLowerCase().includes(searchLower))
-        .slice(0, 5)
+        .slice(0, 4)
         .map(func => ({ type: 'function', label: func, value: func, subLabel: '函数/指标' } as SuggestionItem));
 
       const combined = [...matchedBonds, ...matchedNames, ...matchedFuncs];
@@ -104,16 +105,14 @@ const SuggestionInput: React.FC<SuggestionInputProps> = ({
       const newValue = prefix + item.label + textAfterCursor;
       onChange(newValue);
       setShowSuggestions(false);
-      // Focus back to input
       if (inputRef.current) {
         inputRef.current.focus();
-        // This logic to set cursor position after update is tricky in React sync flow, 
-        // but keeping it simple for now (cursor might jump to end)
       }
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // If suggestions are visible, Arrow keys control suggestions
     if (showSuggestions) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -128,11 +127,20 @@ const SuggestionInput: React.FC<SuggestionInputProps> = ({
         setShowSuggestions(false);
       }
     } else {
-      if (e.key === 'Enter') {
-        // Prevent default form submission if handled elsewhere or let it bubble
-        // We let it bubble to form submit usually, but here we can call onSearch if passed
+      // If no suggestions, Arrow keys control history navigation
+      if (e.key === 'ArrowUp') {
+        if (onHistoryNavigate) {
+          e.preventDefault();
+          onHistoryNavigate('up');
+        }
+      } else if (e.key === 'ArrowDown') {
+        if (onHistoryNavigate) {
+          e.preventDefault();
+          onHistoryNavigate('down');
+        }
+      } else if (e.key === 'Enter') {
         if (onSearch) {
-          // optional: e.preventDefault(); onSearch();
+           // Let the parent handle search trigger
         }
       }
     }
@@ -146,7 +154,6 @@ const SuggestionInput: React.FC<SuggestionInputProps> = ({
         value={value}
         onChange={handleInputChange}
         onKeyDown={handleKeyDown}
-        onFocus={() => {}} // Could trigger suggestion refresh here
         placeholder={placeholder}
         disabled={disabled}
         className="w-full bg-transparent border-none outline-none px-4 py-3 text-lg text-slate-800 placeholder:text-slate-300"
@@ -162,17 +169,19 @@ const SuggestionInput: React.FC<SuggestionInputProps> = ({
             <div
               key={`${item.type}-${item.value}-${index}`}
               onClick={() => applySuggestion(item)}
-              className={`px-4 py-2 cursor-pointer flex justify-between items-center ${
-                index === activeIndex ? 'bg-primary-50' : 'hover:bg-slate-50'
+              className={`px-4 py-2.5 cursor-pointer flex justify-between items-center transition-colors ${
+                index === activeIndex ? 'bg-indigo-50' : 'hover:bg-slate-50'
               }`}
             >
-              <span className="font-medium text-slate-700">{item.label}</span>
-              <span className={`text-xs px-2 py-0.5 rounded-full ${
+              <span className={`font-medium text-sm ${index === activeIndex ? 'text-indigo-700' : 'text-slate-700'}`}>
+                {item.label}
+              </span>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
                 item.type === 'bond' 
-                  ? 'bg-orange-100 text-orange-700' 
-                  : 'bg-purple-100 text-purple-700'
+                  ? 'bg-orange-50 text-orange-600 border-orange-100' 
+                  : 'bg-purple-50 text-purple-600 border-purple-100'
               }`}>
-                {item.subLabel || (item.type === 'bond' ? '债券' : '函数')}
+                {item.subLabel}
               </span>
             </div>
           ))}

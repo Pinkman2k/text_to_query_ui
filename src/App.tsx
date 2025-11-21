@@ -25,11 +25,18 @@ function App() {
   // Result State
   const [currentResult, setCurrentResult] = useState<ApiData | null>(null);
   
-  // History State
+  // History State (Array: Newest -> Oldest)
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | undefined>(undefined);
   
+  // History Navigation (Up/Down keys)
+  // -1: current user input draft
+  // 0: newest history item
+  // 1: second newest...
+  const [historyIndex, setHistoryIndex] = useState<number>(-1);
+  const [tempInput, setTempInput] = useState('');
+
   // UI State
   const [isMockMode, setIsMockMode] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
@@ -39,8 +46,12 @@ function App() {
 
     setLoading(true);
     setError(null);
-    setCurrentResult(null); // Clear current view to show loading state
+    setCurrentResult(null); 
     setSelectedHistoryId(undefined);
+    
+    // Reset history navigation
+    setHistoryIndex(-1);
+    setTempInput('');
 
     const startTimestamp = Date.now();
     const currentQuery = query;
@@ -61,13 +72,12 @@ function App() {
           data: newData,
           timestamp: startTimestamp
         };
-        setHistory(prev => [newHistoryItem, ...prev]); // Newest first
+        setHistory(prev => [newHistoryItem, ...prev]); 
         setSelectedHistoryId(newHistoryItem.id);
       } else {
         const errorMsg = response.msg || '服务器返回错误';
         setError(errorMsg);
         
-        // Optional: Add failed query to history
         const failedItem: HistoryItem = {
           id: startTimestamp.toString(),
           query: currentQuery,
@@ -94,8 +104,10 @@ function App() {
     }
   };
 
+  // Handle selection from Sidebar
   const handleRestoreHistory = (item: HistoryItem) => {
     setQuery(item.query);
+    // Restore result UI
     if (item.data) {
       setCurrentResult(item.data);
       setError(null);
@@ -104,12 +116,53 @@ function App() {
       setCurrentResult(null);
     }
     setSelectedHistoryId(item.id);
-    setShowHistory(false); // Close drawer on mobile/desktop after selection
+    setShowHistory(false);
+    setHistoryIndex(-1); // Reset arrow navigation position
+  };
+
+  // Handle Up/Down Arrow Keys in Input
+  const handleHistoryNavigate = (direction: 'up' | 'down') => {
+    if (history.length === 0) return;
+
+    if (direction === 'up') {
+      // Moving back in time (index increments)
+      if (historyIndex < history.length - 1) {
+        const newIndex = historyIndex + 1;
+        // If starting from current input (-1), save the draft
+        if (historyIndex === -1) {
+          setTempInput(query);
+        }
+        setHistoryIndex(newIndex);
+        setQuery(history[newIndex].query);
+      }
+    } else if (direction === 'down') {
+      // Moving forward in time (index decrements)
+      if (historyIndex > -1) {
+        const newIndex = historyIndex - 1;
+        setHistoryIndex(newIndex);
+        if (newIndex === -1) {
+          // Restored to current draft
+          setQuery(tempInput);
+        } else {
+          setQuery(history[newIndex].query);
+        }
+      }
+    }
   };
 
   const clearHistory = () => {
     setHistory([]);
     setSelectedHistoryId(undefined);
+    setHistoryIndex(-1);
+  };
+
+  // Update query input wrapper to update tempInput if user types while not navigating
+  const handleQueryChange = (val: string) => {
+    setQuery(val);
+    if (historyIndex !== -1) {
+      setHistoryIndex(-1);
+      setTempInput(val); // This becomes the new temp
+    }
   };
 
   return (
@@ -133,7 +186,7 @@ function App() {
       <main className="flex-1 overflow-y-auto scroll-smooth">
         <div className="max-w-5xl mx-auto px-4 py-8 sm:px-6 lg:px-8 pb-32 min-h-full flex flex-col">
           
-          {/* Search Section - Centered initially, moves up when there is a result */}
+          {/* Search Section */}
           <div className={`transition-all duration-500 ease-in-out flex-shrink-0 ${currentResult || loading || error ? 'mt-4 mb-8' : 'flex-1 flex flex-col justify-center mb-[20vh]'}`}>
             
             {/* Logo/Title when no result */}
@@ -159,8 +212,9 @@ function App() {
                     
                     <SuggestionInput 
                       value={query}
-                      onChange={setQuery}
+                      onChange={handleQueryChange}
                       onSearch={handleSearch}
+                      onHistoryNavigate={handleHistoryNavigate}
                       disabled={loading}
                       placeholder="例如：查一下2205474.IB的收益率..."
                     />
@@ -177,6 +231,13 @@ function App() {
                       )}
                     </button>
                   </div>
+                  {/* History Navigation Tip */}
+                  {history.length > 0 && !loading && (
+                    <div className="absolute -right-32 top-1/2 -translate-y-1/2 hidden xl:flex flex-col gap-1 text-[10px] text-slate-300">
+                        <div className="flex items-center gap-1"><span className="border border-slate-200 rounded px-1 bg-white">↑</span> 上条记录</div>
+                        <div className="flex items-center gap-1"><span className="border border-slate-200 rounded px-1 bg-white">↓</span> 下条记录</div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Suggestions Chips & Mock Toggle (Only show when no result to keep UI clean) */}

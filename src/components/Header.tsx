@@ -44,7 +44,7 @@ const Header: React.FC<HeaderProps> = ({ onOpenLibrary, onOpenHistory, historyCo
              <span>函数库</span>
            </button>
            
-           <div className="hidden md:flex items-center gap-2 text-sm text-slate-500 bg-green-50 border border-green-100 text-green-700 px-3 py-1.5 rounded-full">
+           <div className="flex items-center gap-2 text-sm text-slate-500 bg-green-50 border border-green-100 text-green-700 px-3 py-1.5 rounded-full">
             <Activity size={14} className="text-green-500" />
             <span className="hidden sm:inline">运行中</span>
           </div>
