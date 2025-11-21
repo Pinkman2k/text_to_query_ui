@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Search, Send, AlertCircle } from 'lucide-react';
+import { Search, Send, AlertCircle, Trash2 } from 'lucide-react';
 import Header from './components/Header';
 import SuggestionInput from './components/SuggestionInput';
 import FunctionLibrary from './components/FunctionLibrary';
@@ -17,7 +17,7 @@ const SUGGESTIONS = [
 ];
 
 function App() {
-  // State
+  // Search State
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,18 +28,18 @@ function App() {
   // History State
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [selectedHistoryId, setSelectedHistoryId] = useState<string | undefined>(undefined);
   
   // UI State
   const [isMockMode, setIsMockMode] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
-  const [selectedHistoryId, setSelectedHistoryId] = useState<string | undefined>(undefined);
 
   const handleSearch = async () => {
     if (!query.trim()) return;
 
     setLoading(true);
     setError(null);
-    setCurrentResult(null); // Clear current result while loading
+    setCurrentResult(null); // Clear current view to show loading state
     setSelectedHistoryId(undefined);
 
     const startTimestamp = Date.now();
@@ -64,25 +64,27 @@ function App() {
         setHistory(prev => [newHistoryItem, ...prev]); // Newest first
         setSelectedHistoryId(newHistoryItem.id);
       } else {
-        setError(response.msg || '服务器返回错误');
-        // Add failed item to history
-         const failedItem: HistoryItem = {
-           id: startTimestamp.toString(),
-           query: currentQuery,
-           error: response.msg || '服务器返回错误',
-           timestamp: startTimestamp
-         };
-         setHistory(prev => [failedItem, ...prev]);
-         setSelectedHistoryId(failedItem.id);
+        const errorMsg = response.msg || '服务器返回错误';
+        setError(errorMsg);
+        
+        // Optional: Add failed query to history
+        const failedItem: HistoryItem = {
+          id: startTimestamp.toString(),
+          query: currentQuery,
+          error: errorMsg,
+          timestamp: startTimestamp
+        };
+        setHistory(prev => [failedItem, ...prev]);
+        setSelectedHistoryId(failedItem.id);
       }
     } catch (err: any) {
-      const errMsg = '连接服务器失败，请检查后端服务是否启动，或尝试使用模拟模式。';
-      setError(errMsg);
+      const errorMsg = '连接服务器失败，请检查后端服务是否启动，或尝试使用模拟模式。';
+      setError(errorMsg);
       
       const failedItem: HistoryItem = {
         id: startTimestamp.toString(),
         query: currentQuery,
-        error: errMsg,
+        error: errorMsg,
         timestamp: startTimestamp
       };
       setHistory(prev => [failedItem, ...prev]);
@@ -105,8 +107,13 @@ function App() {
     setShowHistory(false); // Close drawer on mobile/desktop after selection
   };
 
+  const clearHistory = () => {
+    setHistory([]);
+    setSelectedHistoryId(undefined);
+  };
+
   return (
-    <div className="flex flex-col h-screen bg-slate-50 overflow-hidden font-sans">
+    <div className="flex flex-col h-screen bg-slate-50 overflow-hidden font-sans text-slate-900">
       <Header 
         onOpenLibrary={() => setShowLibrary(true)} 
         onOpenHistory={() => setShowHistory(true)}
@@ -124,10 +131,10 @@ function App() {
       />
 
       <main className="flex-1 overflow-y-auto scroll-smooth">
-        <div className="max-w-5xl mx-auto px-4 py-8 sm:px-6 lg:px-8 pb-32">
+        <div className="max-w-5xl mx-auto px-4 py-8 sm:px-6 lg:px-8 pb-32 min-h-full flex flex-col">
           
-          {/* Search Section */}
-          <div className={`transition-all duration-500 ease-in-out ${currentResult || loading || error ? 'mb-8' : 'min-h-[60vh] flex flex-col justify-center'}`}>
+          {/* Search Section - Centered initially, moves up when there is a result */}
+          <div className={`transition-all duration-500 ease-in-out flex-shrink-0 ${currentResult || loading || error ? 'mt-4 mb-8' : 'flex-1 flex flex-col justify-center mb-[20vh]'}`}>
             
             {/* Logo/Title when no result */}
             {!currentResult && !loading && !error && (
@@ -172,40 +179,41 @@ function App() {
                   </div>
                 </div>
 
-                {/* Suggestions Chips (Only show when nothing happened) */}
+                {/* Suggestions Chips & Mock Toggle (Only show when no result to keep UI clean) */}
                 {!currentResult && !loading && !error && (
-                  <div className="flex flex-wrap justify-center gap-2 animate-fade-in delay-100">
-                    {SUGGESTIONS.map((s, i) => (
-                      <button
-                        key={i}
-                        onClick={() => setQuery(s)}
-                        className="text-xs bg-white border border-slate-200 hover:border-primary-300 hover:text-primary-600 text-slate-500 px-3 py-1.5 rounded-full transition-colors shadow-sm"
-                      >
-                        {s}
-                      </button>
-                    ))}
+                  <div className="space-y-6 animate-fade-in delay-100">
+                    <div className="flex flex-wrap justify-center gap-2">
+                      {SUGGESTIONS.map((s, i) => (
+                        <button
+                          key={i}
+                          onClick={() => setQuery(s)}
+                          className="text-xs bg-white border border-slate-200 hover:border-primary-300 hover:text-primary-600 text-slate-500 px-3 py-1.5 rounded-full transition-colors shadow-sm"
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex justify-center">
+                      <label className="inline-flex items-center cursor-pointer group bg-white px-4 py-2 rounded-full border border-slate-100 shadow-sm">
+                        <input 
+                          type="checkbox" 
+                          checked={isMockMode} 
+                          onChange={(e) => setIsMockMode(e.target.checked)} 
+                          className="sr-only peer"
+                        />
+                        <span className="mr-3 text-xs font-medium text-slate-400 group-hover:text-slate-600 transition-colors">模拟数据演示模式</span>
+                        <div className="relative w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-600"></div>
+                      </label>
+                    </div>
                   </div>
                 )}
-
-                {/* Mock Mode Toggle */}
-                <div className="flex justify-center">
-                  <label className="inline-flex items-center cursor-pointer group">
-                    <input 
-                      type="checkbox" 
-                      checked={isMockMode} 
-                      onChange={(e) => setIsMockMode(e.target.checked)} 
-                      className="sr-only peer"
-                    />
-                    <span className="mr-3 text-xs font-medium text-slate-400 group-hover:text-slate-600 transition-colors">模拟数据模式</span>
-                    <div className="relative w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-600"></div>
-                  </label>
-                </div>
             </div>
           </div>
 
           {/* Error Message */}
           {error && (
-            <div className="max-w-3xl mx-auto mt-8 animate-fade-in-up">
+            <div className="max-w-3xl mx-auto w-full mb-8 animate-fade-in-up">
               <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3 text-red-700 shadow-sm">
                 <AlertCircle className="shrink-0 mt-0.5" size={20} />
                 <div>
@@ -218,18 +226,32 @@ function App() {
 
           {/* Loading State (Skeleton) */}
           {loading && !currentResult && (
-            <div className="max-w-5xl mx-auto mt-10 space-y-6 animate-pulse">
-              <div className="h-64 bg-slate-200 rounded-xl"></div>
-              <div className="grid grid-cols-3 gap-6">
-                <div className="col-span-1 h-48 bg-slate-200 rounded-xl"></div>
-                <div className="col-span-2 h-48 bg-slate-200 rounded-xl"></div>
+            <div className="max-w-5xl w-full mx-auto space-y-6 animate-pulse">
+              <div className="h-64 bg-slate-200/70 rounded-xl"></div>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-1 h-48 bg-slate-200/70 rounded-xl"></div>
+                <div className="lg:col-span-2 h-48 bg-slate-200/70 rounded-xl"></div>
               </div>
             </div>
           )}
 
           {/* Result Display */}
           {currentResult && !loading && (
-            <div className="mt-6">
+            <div className="w-full">
+               <div className="flex justify-between items-center mb-4 max-w-5xl mx-auto">
+                 <h3 className="text-lg font-semibold text-slate-700">查询详情</h3>
+                 
+                 <label className="inline-flex items-center cursor-pointer">
+                    <span className="mr-2 text-xs font-medium text-slate-400">模拟模式</span>
+                    <input 
+                      type="checkbox" 
+                      checked={isMockMode} 
+                      onChange={(e) => setIsMockMode(e.target.checked)} 
+                      className="sr-only peer"
+                    />
+                    <div className="relative w-7 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary-600"></div>
+                  </label>
+               </div>
               <ResultDisplay data={currentResult} />
             </div>
           )}
