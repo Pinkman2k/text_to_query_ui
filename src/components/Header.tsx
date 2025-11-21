@@ -1,16 +1,18 @@
 
 import React from 'react';
-import { Database, Activity, Book } from 'lucide-react';
+import { Database, Activity, Book, History } from 'lucide-react';
 
 interface HeaderProps {
-  onOpenLibrary?: () => void;
+  onOpenLibrary: () => void;
+  onOpenHistory: () => void;
+  historyCount: number;
 }
 
-const Header: React.FC<HeaderProps> = ({ onOpenLibrary }) => {
+const Header: React.FC<HeaderProps> = ({ onOpenLibrary, onOpenHistory, historyCount }) => {
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 cursor-pointer" onClick={() => window.location.reload()}>
           <div className="bg-primary-600 p-2 rounded-lg text-white">
             <Database size={20} />
           </div>
@@ -20,7 +22,20 @@ const Header: React.FC<HeaderProps> = ({ onOpenLibrary }) => {
           </div>
         </div>
         
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+           <button 
+             onClick={onOpenHistory}
+             className="flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-primary-600 bg-slate-50 hover:bg-primary-50 border border-slate-200 hover:border-primary-200 px-3 py-1.5 rounded-lg transition-all"
+           >
+             <History size={16} />
+             <span className="hidden sm:inline">历史记录</span>
+             {historyCount > 0 && (
+               <span className="bg-slate-200 text-slate-600 text-[10px] px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+                 {historyCount}
+               </span>
+             )}
+           </button>
+
            <button 
              onClick={onOpenLibrary}
              className="hidden sm:flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-primary-600 bg-slate-50 hover:bg-primary-50 border border-slate-200 hover:border-primary-200 px-3 py-1.5 rounded-lg transition-all"
@@ -29,9 +44,9 @@ const Header: React.FC<HeaderProps> = ({ onOpenLibrary }) => {
              <span>函数库</span>
            </button>
            
-           <div className="flex items-center gap-2 text-sm text-slate-500 bg-green-50 border border-green-100 text-green-700 px-3 py-1.5 rounded-full">
+           <div className="hidden md:flex items-center gap-2 text-sm text-slate-500 bg-green-50 border border-green-100 text-green-700 px-3 py-1.5 rounded-full">
             <Activity size={14} className="text-green-500" />
-            <span className="hidden sm:inline">系统运行中</span>
+            <span className="hidden sm:inline">运行中</span>
           </div>
         </div>
       </div>

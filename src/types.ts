@@ -48,6 +48,14 @@ export interface Message {
   timestamp: number;
 }
 
+export interface HistoryItem {
+  id: string;
+  query: string;
+  data?: ApiData;
+  error?: string;
+  timestamp: number;
+}
+
 export interface FunctionInfo {
   api: string;
   dataType: string;

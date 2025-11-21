@@ -1,3 +1,4 @@
+
 export interface NlpEntities {
   bond_code?: string;
   function_api?: string;
@@ -36,4 +37,26 @@ export interface ApiResponse {
 
 export interface ApiError {
   message: string;
+}
+
+export interface Message {
+  id: string;
+  role: 'user' | 'assistant';
+  content?: string;
+  data?: ApiData;
+  error?: string;
+  timestamp: number;
+}
+
+export interface FunctionInfo {
+  api: string;
+  dataType: string;
+  example_sql: string;
+}
+
+export interface SuggestionItem {
+  type: 'bond' | 'function';
+  label: string;
+  value: string;
+  subLabel?: string;
 }

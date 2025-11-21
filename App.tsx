@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
-import { Search, Sparkles, AlertCircle } from 'lucide-react';
+
+import React, { useState, useRef, useEffect } from 'react';
+import { Search, Sparkles, Send, Trash2 } from 'lucide-react';
 import Header from './components/Header';
-import SqlViewer from './components/SqlViewer';
-import EntityCard from './components/EntityCard';
-import DebugLog from './components/DebugLog';
-import ResultTable from './components/ResultTable';
+import ChatMessage from './components/ChatMessage';
+import SuggestionInput from './components/SuggestionInput';
+import FunctionLibrary from './components/FunctionLibrary';
 import { convertTextToSql, mockConvertTextToSql } from './services/nlpService';
-import { ApiData } from './types';
+import { Message } from './types';
 
 const SUGGESTIONS = [
   "查一下2205474.IB的收益率",
@@ -18,180 +18,194 @@ const SUGGESTIONS = [
 function App() {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
-  const [data, setData] = useState<ApiData | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [isMockMode, setIsMockMode] = useState(false);
+  const [showLibrary, setShowLibrary] = useState(false);
+  
+  // Chat History State
+  const [messages, setMessages] = useState<Message[]>([]);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const handleSearch = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const handleSearch = async () => {
     if (!query.trim()) return;
 
+    const currentQuery = query;
+    setQuery(''); // Clear input immediately
     setLoading(true);
-    setError(null);
-    setData(null);
+
+    // Add User Message
+    const userMsgId = Date.now().toString();
+    const userMsg: Message = {
+      id: userMsgId,
+      role: 'user',
+      content: currentQuery,
+      timestamp: Date.now(),
+    };
+    
+    // Add Placeholder Assistant Message
+    const assistantMsgId = (Date.now() + 1).toString();
+    const assistantMsg: Message = {
+      id: assistantMsgId,
+      role: 'assistant',
+      timestamp: Date.now(),
+    };
+
+    setMessages(prev => [...prev, userMsg, assistantMsg]);
 
     try {
-      // 优先尝试真实 API，如果处于模拟模式则使用 mock
       const response = isMockMode 
-        ? await mockConvertTextToSql(query)
-        : await convertTextToSql(query);
+        ? await mockConvertTextToSql(currentQuery)
+        : await convertTextToSql(currentQuery);
       
-      if (response.code === 200) {
-        setData(response.data);
-      } else {
-        setError(response.msg || '未知服务器错误');
-      }
+      // Update Assistant Message with Result
+      setMessages(prev => prev.map(msg => {
+        if (msg.id === assistantMsgId) {
+          if (response.code === 200) {
+            return { ...msg, data: response.data };
+          } else {
+            return { ...msg, error: response.msg || '未知服务器错误' };
+          }
+        }
+        return msg;
+      }));
+
     } catch (err: any) {
-      // 处理 fetch 错误
-      setError(`连接本地后端失败。请确保服务器正运行在 localhost:5000，或者尝试切换到模拟模式。`);
+      setMessages(prev => prev.map(msg => {
+        if (msg.id === assistantMsgId) {
+          return { ...msg, error: `连接本地后端失败。请确保服务器正运行在 localhost:5000，或者尝试切换到模拟模式。` };
+        }
+        return msg;
+      }));
     } finally {
       setLoading(false);
     }
   };
 
+  const clearHistory = () => {
+    setMessages([]);
+  };
+
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
-      <Header />
+    <div className="flex flex-col h-screen bg-slate-50 overflow-hidden">
+      <Header onOpenLibrary={() => setShowLibrary(true)} />
+      <FunctionLibrary isOpen={showLibrary} onClose={() => setShowLibrary(false)} />
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-12">
-        
-        {/* Hero / Search Section */}
-        <div className="max-w-3xl mx-auto text-center mb-12">
-          <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-4">
-            智能 <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-600 to-indigo-600">债券数据库</span> 助手
-          </h2>
-          <p className="text-slate-500 text-lg mb-8">
-            将自然语言问题即时转化为可执行的 SQL 查询语句并展示结果。
-          </p>
+      <main className="flex-1 overflow-y-auto p-4 sm:p-6 scroll-smooth">
+        <div className="max-w-4xl mx-auto pb-32">
+          
+          {/* Empty State */}
+          {messages.length === 0 && (
+            <div className="min-h-[60vh] flex flex-col items-center justify-center text-center space-y-8 animate-fade-in">
+              <div>
+                <h2 className="text-4xl font-bold text-slate-900 mb-4">
+                  智能 <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-600 to-indigo-600">债券数据库</span> 助手
+                </h2>
+                <p className="text-slate-500 text-lg max-w-lg mx-auto">
+                  向我提问关于债券代码、名称、或者指标数据的问题。
+                </p>
+              </div>
 
-          <form onSubmit={handleSearch} className="relative group">
-            <div className="absolute inset-0 bg-gradient-to-r from-primary-500 to-indigo-500 rounded-2xl blur opacity-20 group-hover:opacity-30 transition-opacity duration-200"></div>
-            <div className="relative bg-white rounded-2xl shadow-xl border border-slate-200 flex items-center p-2">
-              <Search className="text-slate-400 ml-4" size={24} />
-              <input
-                type="text"
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl w-full px-4">
+                {SUGGESTIONS.map((s, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setQuery(s)}
+                    className="text-sm text-left bg-white border border-slate-200 hover:border-primary-300 hover:shadow-md p-4 rounded-xl text-slate-600 transition-all"
+                  >
+                    "{s}"
+                  </button>
+                ))}
+              </div>
+
+              {/* Mock Mode Toggle for Empty State */}
+               <label className="inline-flex items-center cursor-pointer bg-white px-4 py-2 rounded-full border border-slate-200 shadow-sm">
+                  <input 
+                    type="checkbox" 
+                    checked={isMockMode} 
+                    onChange={(e) => setIsMockMode(e.target.checked)} 
+                    className="sr-only peer"
+                  />
+                  <div className="relative w-9 h-5 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-600"></div>
+                  <span className="ms-3 text-sm font-medium text-slate-600">演示 / 模拟模式</span>
+                </label>
+            </div>
+          )}
+
+          {/* Chat Messages */}
+          <div className="space-y-6">
+            {messages.map((msg) => (
+              <ChatMessage key={msg.id} message={msg} />
+            ))}
+            <div ref={messagesEndRef} />
+          </div>
+        </div>
+      </main>
+
+      {/* Input Area - Fixed at Bottom */}
+      <div className="bg-white border-t border-slate-200 p-4 sticky bottom-0 z-10 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        <div className="max-w-4xl mx-auto">
+           {/* Control Bar (Clear History, Mock Toggle in non-empty state) */}
+           {messages.length > 0 && (
+             <div className="flex justify-between items-center mb-3 px-1">
+               <button 
+                 onClick={clearHistory}
+                 className="text-xs flex items-center gap-1.5 text-slate-400 hover:text-red-500 transition-colors"
+               >
+                 <Trash2 size={14} /> 清空历史
+               </button>
+
+               <label className="inline-flex items-center cursor-pointer">
+                  <span className="mr-2 text-xs font-medium text-slate-400">模拟模式</span>
+                  <input 
+                    type="checkbox" 
+                    checked={isMockMode} 
+                    onChange={(e) => setIsMockMode(e.target.checked)} 
+                    className="sr-only peer"
+                  />
+                  <div className="relative w-7 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary-600"></div>
+                </label>
+             </div>
+           )}
+
+           <div className="relative group">
+            <div className="absolute inset-0 bg-gradient-to-r from-primary-500 to-indigo-500 rounded-2xl blur opacity-10 group-hover:opacity-20 transition-opacity duration-200"></div>
+            <div className="relative bg-white rounded-2xl shadow-lg border border-slate-200 flex items-center p-2 gap-2">
+              <div className="pl-3 text-slate-400">
+                 <Search size={20} />
+              </div>
+              
+              <SuggestionInput 
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="例如：查一下2205474.IB的收益率"
-                className="flex-1 bg-transparent border-none outline-none px-4 py-3 text-lg text-slate-800 placeholder:text-slate-300"
+                onChange={setQuery}
+                onSearch={handleSearch}
+                disabled={loading}
+                placeholder="请输入自然语言查询..."
               />
+
               <button
-                type="submit"
+                onClick={handleSearch}
                 disabled={loading || !query.trim()}
-                className="bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 text-white px-6 py-3 rounded-xl font-medium transition-all flex items-center gap-2 min-w-[120px] justify-center"
+                className="bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed text-white p-2.5 rounded-xl transition-all flex items-center justify-center shrink-0"
               >
                 {loading ? (
                   <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                 ) : (
-                  <>
-                    生成查询 <Sparkles size={16} />
-                  </>
+                  <Send size={18} />
                 )}
               </button>
             </div>
-          </form>
-
-          {/* Suggestions */}
-          <div className="mt-6 flex flex-wrap justify-center gap-2">
-            {SUGGESTIONS.map((s, i) => (
-              <button
-                key={i}
-                onClick={() => {
-                  setQuery(s);
-                  // 可选：点击后自动提交
-                }}
-                className="text-xs bg-white border border-slate-200 hover:border-primary-300 hover:text-primary-600 px-3 py-1.5 rounded-full text-slate-500 transition-colors"
-              >
-                {s}
-              </button>
-            ))}
           </div>
-
-          {/* Mock Mode Toggle */}
-          <div className="mt-4 flex items-center justify-center gap-2">
-             <label className="inline-flex items-center cursor-pointer">
-                <input 
-                  type="checkbox" 
-                  checked={isMockMode} 
-                  onChange={(e) => setIsMockMode(e.target.checked)} 
-                  className="sr-only peer"
-                />
-                <div className="relative w-9 h-5 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-600"></div>
-                <span className="ms-3 text-xs font-medium text-slate-400 dark:text-slate-300">演示 / 模拟模式</span>
-              </label>
+          <div className="text-center mt-2 text-xs text-slate-400">
+            BondSQL AI 可能通过 Mock 数据进行演示。
           </div>
         </div>
-
-        {/* Error State */}
-        {error && (
-          <div className="max-w-3xl mx-auto mb-8 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3 text-red-700">
-            <AlertCircle size={20} className="shrink-0 mt-0.5" />
-            <div>
-              <h3 className="font-semibold">生成失败</h3>
-              <p className="text-sm mt-1 opacity-90">{error}</p>
-              {!isMockMode && (
-                <button 
-                  onClick={() => setIsMockMode(true)}
-                  className="mt-2 text-xs font-semibold underline hover:text-red-800"
-                >
-                  尝试切换到模拟模式？
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Results Section */}
-        {data && (
-          <div className="animate-fade-in-up space-y-6">
-            
-            {/* 1. Query Result Table (最重要，放在显眼位置) */}
-            {data.query_result && (
-              <div className="w-full">
-                <ResultTable rows={data.query_result.rows} />
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Left: Entities */}
-              <div className="lg:col-span-1">
-                <EntityCard entities={data.nlp_result.entities} />
-              </div>
-              
-              {/* Right: SQL */}
-              <div className="lg:col-span-2">
-                <SqlViewer sql={data.nlp_result.sql} />
-              </div>
-            </div>
-
-            {/* Bottom: Debug Trace (如果有) */}
-            {data.nlp_result.debug_trace && data.nlp_result.debug_trace.length > 0 && (
-              <div className="w-full">
-                <DebugLog traces={data.nlp_result.debug_trace} />
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Empty State / Placeholder */}
-        {!data && !loading && !error && (
-          <div className="max-w-2xl mx-auto text-center py-12 opacity-40">
-            <DatabaseIconPlaceholder />
-            <p className="mt-4 text-slate-400 font-medium">等待输入查询...</p>
-          </div>
-        )}
-
-      </main>
+      </div>
     </div>
   );
 }
-
-const DatabaseIconPlaceholder = () => (
-  <svg className="w-32 h-32 mx-auto text-slate-200" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1">
-    <ellipse cx="12" cy="5" rx="9" ry="3" />
-    <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
-    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-  </svg>
-);
 
 export default App;

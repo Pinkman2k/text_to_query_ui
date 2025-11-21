@@ -1,12 +1,13 @@
 
-import React, { useState, useRef, useEffect } from 'react';
-import { Search, Sparkles, Send, Trash2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Search, Send, AlertCircle } from 'lucide-react';
 import Header from './components/Header';
-import ChatMessage from './components/ChatMessage';
 import SuggestionInput from './components/SuggestionInput';
 import FunctionLibrary from './components/FunctionLibrary';
+import HistoryDrawer from './components/HistoryDrawer';
+import ResultDisplay from './components/ResultDisplay';
 import { convertTextToSql, mockConvertTextToSql } from './services/nlpService';
-import { Message, ApiData } from './types';
+import { HistoryItem, ApiData } from './types';
 
 const SUGGESTIONS = [
   "查一下2205474.IB的收益率",
@@ -16,194 +17,225 @@ const SUGGESTIONS = [
 ];
 
 function App() {
+  // State
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Result State
+  const [currentResult, setCurrentResult] = useState<ApiData | null>(null);
+  
+  // History State
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  
+  // UI State
   const [isMockMode, setIsMockMode] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
-  
-  // Chat History State
-  const [messages, setMessages] = useState<Message[]>([]);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  // Scroll to bottom when messages change
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  const [selectedHistoryId, setSelectedHistoryId] = useState<string | undefined>(undefined);
 
   const handleSearch = async () => {
     if (!query.trim()) return;
 
-    const currentQuery = query;
-    setQuery(''); // Clear input immediately
     setLoading(true);
+    setError(null);
+    setCurrentResult(null); // Clear current result while loading
+    setSelectedHistoryId(undefined);
 
-    // Add User Message
-    const userMsgId = Date.now().toString();
-    const userMsg: Message = {
-      id: userMsgId,
-      role: 'user',
-      content: currentQuery,
-      timestamp: Date.now(),
-    };
-    
-    // Add Placeholder Assistant Message
-    const assistantMsgId = (Date.now() + 1).toString();
-    const assistantMsg: Message = {
-      id: assistantMsgId,
-      role: 'assistant',
-      timestamp: Date.now(),
-    };
-
-    setMessages(prev => [...prev, userMsg, assistantMsg]);
+    const startTimestamp = Date.now();
+    const currentQuery = query;
 
     try {
       const response = isMockMode 
         ? await mockConvertTextToSql(currentQuery)
         : await convertTextToSql(currentQuery);
-      
-      // Update Assistant Message with Result
-      setMessages(prev => prev.map(msg => {
-        if (msg.id === assistantMsgId) {
-          if (response.code === 200) {
-            return { ...msg, data: response.data };
-          } else {
-            return { ...msg, error: response.msg || '未知服务器错误' };
-          }
-        }
-        return msg;
-      }));
 
+      if (response.code === 200) {
+        const newData = response.data;
+        setCurrentResult(newData);
+        
+        // Add to history
+        const newHistoryItem: HistoryItem = {
+          id: startTimestamp.toString(),
+          query: currentQuery,
+          data: newData,
+          timestamp: startTimestamp
+        };
+        setHistory(prev => [newHistoryItem, ...prev]); // Newest first
+        setSelectedHistoryId(newHistoryItem.id);
+      } else {
+        setError(response.msg || '服务器返回错误');
+        // Add failed item to history
+         const failedItem: HistoryItem = {
+           id: startTimestamp.toString(),
+           query: currentQuery,
+           error: response.msg || '服务器返回错误',
+           timestamp: startTimestamp
+         };
+         setHistory(prev => [failedItem, ...prev]);
+         setSelectedHistoryId(failedItem.id);
+      }
     } catch (err: any) {
-      setMessages(prev => prev.map(msg => {
-        if (msg.id === assistantMsgId) {
-          return { ...msg, error: `连接本地后端失败。请确保服务器正运行在 localhost:5000，或者尝试切换到模拟模式。` };
-        }
-        return msg;
-      }));
+      const errMsg = '连接服务器失败，请检查后端服务是否启动，或尝试使用模拟模式。';
+      setError(errMsg);
+      
+      const failedItem: HistoryItem = {
+        id: startTimestamp.toString(),
+        query: currentQuery,
+        error: errMsg,
+        timestamp: startTimestamp
+      };
+      setHistory(prev => [failedItem, ...prev]);
+      setSelectedHistoryId(failedItem.id);
     } finally {
       setLoading(false);
     }
   };
 
-  const clearHistory = () => {
-    setMessages([]);
+  const handleRestoreHistory = (item: HistoryItem) => {
+    setQuery(item.query);
+    if (item.data) {
+      setCurrentResult(item.data);
+      setError(null);
+    } else if (item.error) {
+      setError(item.error);
+      setCurrentResult(null);
+    }
+    setSelectedHistoryId(item.id);
+    setShowHistory(false); // Close drawer on mobile/desktop after selection
   };
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50 overflow-hidden">
-      <Header onOpenLibrary={() => setShowLibrary(true)} />
+    <div className="flex flex-col h-screen bg-slate-50 overflow-hidden font-sans">
+      <Header 
+        onOpenLibrary={() => setShowLibrary(true)} 
+        onOpenHistory={() => setShowHistory(true)}
+        historyCount={history.length}
+      />
+      
       <FunctionLibrary isOpen={showLibrary} onClose={() => setShowLibrary(false)} />
+      
+      <HistoryDrawer 
+        isOpen={showHistory} 
+        onClose={() => setShowHistory(false)} 
+        history={history}
+        onSelect={handleRestoreHistory}
+        selectedId={selectedHistoryId}
+      />
 
-      <main className="flex-1 overflow-y-auto p-4 sm:p-6 scroll-smooth">
-        <div className="max-w-4xl mx-auto pb-32">
+      <main className="flex-1 overflow-y-auto scroll-smooth">
+        <div className="max-w-5xl mx-auto px-4 py-8 sm:px-6 lg:px-8 pb-32">
           
-          {/* Empty State */}
-          {messages.length === 0 && (
-            <div className="min-h-[60vh] flex flex-col items-center justify-center text-center space-y-8 animate-fade-in">
-              <div>
-                <h2 className="text-4xl font-bold text-slate-900 mb-4">
+          {/* Search Section */}
+          <div className={`transition-all duration-500 ease-in-out ${currentResult || loading || error ? 'mb-8' : 'min-h-[60vh] flex flex-col justify-center'}`}>
+            
+            {/* Logo/Title when no result */}
+            {!currentResult && !loading && !error && (
+              <div className="text-center mb-10 animate-fade-in">
+                 <h2 className="text-4xl font-bold text-slate-900 mb-4 tracking-tight">
                   智能 <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-600 to-indigo-600">债券数据库</span> 助手
                 </h2>
-                <p className="text-slate-500 text-lg max-w-lg mx-auto">
-                  向我提问关于债券代码、名称、或者指标数据的问题。
+                <p className="text-slate-500 text-lg">
+                  输入自然语言，立即获取债券指标数据与 SQL 查询。
                 </p>
               </div>
+            )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl w-full px-4">
-                {SUGGESTIONS.map((s, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setQuery(s)}
-                    className="text-sm text-left bg-white border border-slate-200 hover:border-primary-300 hover:shadow-md p-4 rounded-xl text-slate-600 transition-all"
-                  >
-                    "{s}"
-                  </button>
-                ))}
+            {/* Search Input Box */}
+            <div className="w-full max-w-3xl mx-auto space-y-4">
+               <div className="relative group z-10">
+                  <div className="absolute inset-0 bg-gradient-to-r from-primary-500 to-indigo-500 rounded-2xl blur opacity-20 group-hover:opacity-30 transition-opacity duration-300"></div>
+                  <div className="relative bg-white rounded-2xl shadow-xl border border-slate-200 flex items-center p-2 gap-2 transition-all focus-within:ring-2 focus-within:ring-primary-100 focus-within:border-primary-300">
+                    <div className="pl-3 text-slate-400">
+                       <Search size={22} />
+                    </div>
+                    
+                    <SuggestionInput 
+                      value={query}
+                      onChange={setQuery}
+                      onSearch={handleSearch}
+                      disabled={loading}
+                      placeholder="例如：查一下2205474.IB的收益率..."
+                    />
+
+                    <button
+                      onClick={handleSearch}
+                      disabled={loading || !query.trim()}
+                      className="bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed text-white p-3 rounded-xl transition-all flex items-center justify-center shrink-0 shadow-md active:scale-95"
+                    >
+                      {loading ? (
+                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      ) : (
+                        <Send size={18} />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Suggestions Chips (Only show when nothing happened) */}
+                {!currentResult && !loading && !error && (
+                  <div className="flex flex-wrap justify-center gap-2 animate-fade-in delay-100">
+                    {SUGGESTIONS.map((s, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setQuery(s)}
+                        className="text-xs bg-white border border-slate-200 hover:border-primary-300 hover:text-primary-600 text-slate-500 px-3 py-1.5 rounded-full transition-colors shadow-sm"
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Mock Mode Toggle */}
+                <div className="flex justify-center">
+                  <label className="inline-flex items-center cursor-pointer group">
+                    <input 
+                      type="checkbox" 
+                      checked={isMockMode} 
+                      onChange={(e) => setIsMockMode(e.target.checked)} 
+                      className="sr-only peer"
+                    />
+                    <span className="mr-3 text-xs font-medium text-slate-400 group-hover:text-slate-600 transition-colors">模拟数据模式</span>
+                    <div className="relative w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-600"></div>
+                  </label>
+                </div>
+            </div>
+          </div>
+
+          {/* Error Message */}
+          {error && (
+            <div className="max-w-3xl mx-auto mt-8 animate-fade-in-up">
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3 text-red-700 shadow-sm">
+                <AlertCircle className="shrink-0 mt-0.5" size={20} />
+                <div>
+                  <h3 className="font-semibold">请求失败</h3>
+                  <p className="text-sm mt-1 opacity-90">{error}</p>
+                </div>
               </div>
-
-              {/* Mock Mode Toggle for Empty State */}
-               <label className="inline-flex items-center cursor-pointer bg-white px-4 py-2 rounded-full border border-slate-200 shadow-sm">
-                  <input 
-                    type="checkbox" 
-                    checked={isMockMode} 
-                    onChange={(e) => setIsMockMode(e.target.checked)} 
-                    className="sr-only peer"
-                  />
-                  <div className="relative w-9 h-5 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-600"></div>
-                  <span className="ms-3 text-sm font-medium text-slate-600">演示 / 模拟模式</span>
-                </label>
             </div>
           )}
 
-          {/* Chat Messages */}
-          <div className="space-y-6">
-            {messages.map((msg) => (
-              <ChatMessage key={msg.id} message={msg} />
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
+          {/* Loading State (Skeleton) */}
+          {loading && !currentResult && (
+            <div className="max-w-5xl mx-auto mt-10 space-y-6 animate-pulse">
+              <div className="h-64 bg-slate-200 rounded-xl"></div>
+              <div className="grid grid-cols-3 gap-6">
+                <div className="col-span-1 h-48 bg-slate-200 rounded-xl"></div>
+                <div className="col-span-2 h-48 bg-slate-200 rounded-xl"></div>
+              </div>
+            </div>
+          )}
+
+          {/* Result Display */}
+          {currentResult && !loading && (
+            <div className="mt-6">
+              <ResultDisplay data={currentResult} />
+            </div>
+          )}
+
         </div>
       </main>
-
-      {/* Input Area - Fixed at Bottom */}
-      <div className="bg-white border-t border-slate-200 p-4 sticky bottom-0 z-10 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-        <div className="max-w-4xl mx-auto">
-           {/* Control Bar (Clear History, Mock Toggle in non-empty state) */}
-           {messages.length > 0 && (
-             <div className="flex justify-between items-center mb-3 px-1">
-               <button 
-                 onClick={clearHistory}
-                 className="text-xs flex items-center gap-1.5 text-slate-400 hover:text-red-500 transition-colors"
-               >
-                 <Trash2 size={14} /> 清空历史
-               </button>
-
-               <label className="inline-flex items-center cursor-pointer">
-                  <span className="mr-2 text-xs font-medium text-slate-400">模拟模式</span>
-                  <input 
-                    type="checkbox" 
-                    checked={isMockMode} 
-                    onChange={(e) => setIsMockMode(e.target.checked)} 
-                    className="sr-only peer"
-                  />
-                  <div className="relative w-7 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary-600"></div>
-                </label>
-             </div>
-           )}
-
-           <div className="relative group">
-            <div className="absolute inset-0 bg-gradient-to-r from-primary-500 to-indigo-500 rounded-2xl blur opacity-10 group-hover:opacity-20 transition-opacity duration-200"></div>
-            <div className="relative bg-white rounded-2xl shadow-lg border border-slate-200 flex items-center p-2 gap-2">
-              <div className="pl-3 text-slate-400">
-                 <Search size={20} />
-              </div>
-              
-              <SuggestionInput 
-                value={query}
-                onChange={setQuery}
-                onSearch={handleSearch}
-                disabled={loading}
-                placeholder="请输入自然语言查询..."
-              />
-
-              <button
-                onClick={handleSearch}
-                disabled={loading || !query.trim()}
-                className="bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed text-white p-2.5 rounded-xl transition-all flex items-center justify-center shrink-0"
-              >
-                {loading ? (
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                ) : (
-                  <Send size={18} />
-                )}
-              </button>
-            </div>
-          </div>
-          <div className="text-center mt-2 text-xs text-slate-400">
-            BondSQL AI 可能通过 Mock 数据进行演示。
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
