@@ -1,0 +1,5 @@
+{
+  "name": "BondSQL AI",
+  "description": "用于债券市场数据分析的自然语言转 SQL 转换器。",
+  "requestFramePermissions": []
+}
